@@ -48,6 +48,17 @@ app.get("/api/groups", auth, asyncRoute(async (req, res) => {
     ORDER BY g.created_at DESC`, [req.user?.id]);
   res.json(result.rows);
 }));
+app.post("/api/groups", auth, asyncRoute(async (req, res) => {
+  const input = z.object({ name: z.string().min(2).max(120), emoji: z.string().min(1).max(10).default("👥") }).parse(req.body);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const group = await client.query("INSERT INTO groups(name,emoji,created_by) VALUES($1,$2,$3) RETURNING id,name,emoji", [input.name, input.emoji, req.user?.id]);
+    await client.query("INSERT INTO group_members(group_id,user_id) VALUES($1,$2)", [group.rows[0].id, req.user?.id]);
+    await client.query("COMMIT");
+    res.status(201).json(group.rows[0]);
+  } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
+}));
 
 app.get("/api/groups/:id", auth, asyncRoute(async (req, res) => {
   if (!(await isMember(String(req.params.id), req.user!.id))) return res.status(403).json({ message: "Not a group member" });
